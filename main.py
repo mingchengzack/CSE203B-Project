@@ -41,7 +41,7 @@ def NMF_training(matrix,labels,method):
 
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
-    learning_rate=5e-1
+    learning_rate=1
     optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=5e-4)
     
     #Define loss function
