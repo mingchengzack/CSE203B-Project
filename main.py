@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA
 from sklearn import metrics
 from sklearn import linear_model
+from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
@@ -16,10 +17,27 @@ import torch.optim as optim
 def MSE_loss(preds,labels):
     return ((preds-labels)**2).mean()
 
+def Map_Labels(V_T, clusters,labels, method):
+    pred = np.zeros(len(labels))
+    map_label = dict()
+
+    # Find the mode true label in each cluster and make it the prediction
+    if method == 'mode':
+        for c in range(len(V_T)):
+            count = np.array([labels[i] for i in np.nditer(np.where(clusters == c))])
+            mode = stats.mode(count)
+            map_label[c] = mode[0][0]
+        for i in range(len(labels)):
+            pred[i] = map_label[clusters[i]]
+
+    return pred
+
 def Predict_and_Eval(V_T,labels):
     # V_T shape: num_cluster * num_document, labels shape: 1* num_document
-    pass
-
+    clusters = np.argmax(V_T, axis=0)
+    pred = Map_Labels(V_T, clusters, labels, 'mode')
+    acc = sum(pred == labels) / len(labels)
+    return acc
 
 #Define latent facor model in PyTorch style
 class NMF_SGD(nn.Module):
@@ -65,8 +83,7 @@ def NMF_training(matrix,labels,method):
         acc=Predict_and_Eval(V_T,labels)
 
         if epoch<5 or epoch%5==0:
-            print("Epoch: %d, train loss is: %f" %(epoch,float(loss_train)))
-            # print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
+            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
 
 def NMF(matrix,labels,method):
     
@@ -76,11 +93,7 @@ def NMF(matrix,labels,method):
     
     # print("MSE of "+method+" on validation set is: %f" %MSE)
 
-
-
 if __name__ == "__main__":
-
-
     #Read dataset
     # matrix shape: num_document * num_feature, labels: num_document * 1 
     with np.load('./data/test.npz',allow_pickle=True) as data:
