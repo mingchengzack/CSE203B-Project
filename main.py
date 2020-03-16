@@ -21,15 +21,18 @@ def Predict_and_Eval(V_T,labels):
     # V_T shape: num_cluster * num_document, labels shape: 1* num_document
     pass
 
-
 #Define latent facor model in PyTorch style
 class NMF_SGD(nn.Module):
     def __init__(self,num_document,num_feature,num_cluster): #K is the latent vector dimension, alpha_init is used to initialize alpha
         super(NMF_SGD,self).__init__()
+        # self.U=nn.Embedding(num_feature,num_cluster,sparse=True)
+        # self.V_T=nn.Embedding(num_cluster,num_document,sparse=True)
         self.U=nn.Parameter(torch.rand(num_feature,num_cluster))
         self.V_T=nn.Parameter(torch.rand(num_cluster,num_document))
     
     def forward(self):
+        # self.U=nn.Parameter(self.U.clamp(min=0))
+        # self.V_T=nn.Parameter(self.V_T.clamp(min=0))
         return torch.mm(self.U,self.V_T)
 
 #Training functions to conduct gradient descent in Latent Factor Model and DenseNET
@@ -37,6 +40,8 @@ def NMF_training(matrix,labels,method):
     num_document=matrix.shape[1]
     num_feature=matrix.shape[0]
     num_cluster=20
+
+    matrix=100*torch.rand(num_feature,num_document)
 
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
@@ -60,6 +65,14 @@ def NMF_training(matrix,labels,method):
         for name, param in model.named_parameters():
             if name=='V_T':
                 V_T=param.data.detach().numpy()
+        
+        # model.U=nn.Parameter(model.U.clamp(min=0))
+        # model.V_T=nn.Parameter(model.V_T.clamp(min=0))
+        
+        # for i in range(V_T.shape[0]):
+        #     for j in range(V_T.shape[1]):
+        #         if(V_T[i,j]>0):
+        #             print('here')
 
         #Predict label and compute accuracy
         acc=Predict_and_Eval(V_T,labels)
