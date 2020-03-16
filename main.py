@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import string
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -55,8 +56,6 @@ def NMF_training(matrix,labels,method):
     num_feature=matrix.shape[0]
     num_cluster=20
 
-    matrix=torch.tensor(matrix,dtype=torch.float32)
-
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
     learning_rate=1
@@ -67,6 +66,7 @@ def NMF_training(matrix,labels,method):
 
     train_epochs=2000
     for epoch in range(train_epochs):
+        startTime=time.time()
 
         optimizer.zero_grad() #Zero gradient to avoid accumulating
         preds=model() #Forward
@@ -83,6 +83,7 @@ def NMF_training(matrix,labels,method):
         acc=Predict_and_Eval(V_T,labels)
 
         if epoch<5 or epoch%5==0:
+            print("Epoch: %d, train loss is: %f. Time elapsed %f" %(epoch,float(loss_train),time.time()-startTime))
             print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
 
 def NMF(matrix,labels,method):
@@ -96,9 +97,8 @@ def NMF(matrix,labels,method):
 if __name__ == "__main__":
     #Read dataset
     # matrix shape: num_document * num_feature, labels: num_document * 1 
-    with np.load('./data/test.npz',allow_pickle=True) as data:
-        matrix=data['texts']
-        labels=data['labels']
+    matrix=torch.load('./data/x_test.pt')
+    labels=torch.load('./data/y_test.pt')
     print('Read dataset complete')
     print('Matrix size: '+str(matrix.shape))
 
