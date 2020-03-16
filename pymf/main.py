@@ -16,8 +16,9 @@ import torch
 from torch import nn
 import torch.optim as optim
 from surprise import NMF
-from cnmf import CNMF
-from chnmf import CHNMF
+import pymf
+
+num_cluster=20
 
 def MSE_loss(preds,labels):
     return ((preds-labels)**2).mean()
@@ -143,10 +144,12 @@ def SVD_sklearn(matrix,labels):
 
 def CNMF_Pymf(matrix,labels):
     matrix=matrix.to_dense().numpy()
-    model = CNMF(matrix, num_bases=num_cluster)
-    model.factorize(niter=200)
+    model = pymf.CNMF(matrix, num_bases=num_cluster, niter=500)
+    model.initialization()
+    model.factorize()
     U=model.W
     V_T=model.H
+    print(V_T)
     acc = Predict_and_Eval(V_T, labels)
     U = torch.FloatTensor(U)
     V_T = torch.FloatTensor(V_T.copy())
@@ -156,10 +159,12 @@ def CNMF_Pymf(matrix,labels):
 
 def CHNMF_Pymf(matrix,labels):
     matrix=matrix.to_dense().numpy()
-    model = CHNMF(matrix, num_bases=num_cluster)
-    model.factorize(niter=200)
+    model = pymf.CHNMF(matrix, num_bases=num_cluster, niter=500)
+    model.initialization()
+    model.factorize()
     U=model.W
     V_T=model.H
+    print(V_T)
     acc = Predict_and_Eval(V_T, labels)
     U = torch.FloatTensor(U)
     V_T = torch.FloatTensor(V_T.copy())
@@ -178,8 +183,6 @@ def NMF(matrix,labels,method):
         SVD_sklearn(matrix,labels)
     elif method=='CNMF_Pymf':
         CNMF_Pymf(matrix,labels)
-    elif method=='CHNMF_Pymf':
-        CHNMF_Pymf(matrix,labels)
 
     # print("MSE of "+method+" on validation set is: %f" %MSE)
 
