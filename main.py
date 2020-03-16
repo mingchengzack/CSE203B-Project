@@ -10,16 +10,38 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA
 from sklearn import metrics
 from sklearn import linear_model
+from sklearn import decomposition
+from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
 
+num_cluster=20
+
 def MSE_loss(preds,labels):
     return ((preds-labels)**2).mean()
 
+def Map_Labels(V_T, clusters,labels, method):
+    pred = np.zeros(len(labels))
+    map_label = dict()
+
+    # Find the mode true label in each cluster and make it the prediction
+    if method == 'mode':
+        for c in range(len(V_T)):
+            count = np.array([labels[i] for i in np.nditer(np.where(clusters == c))])
+            mode = stats.mode(count)
+            map_label[c] = mode[0][0]
+        for i in range(len(labels)):
+            pred[i] = map_label[clusters[i]]
+
+    return pred
+
 def Predict_and_Eval(V_T,labels):
     # V_T shape: num_cluster * num_document, labels shape: 1* num_document
-    pass
+    clusters = np.argmax(V_T, axis=0)
+    pred = Map_Labels(V_T, clusters, labels, 'mode')
+    acc = sum(pred == labels) / len(labels)
+    return acc
 
 #Define latent facor model in PyTorch style
 class NMF_SGD(nn.Module):
@@ -39,9 +61,8 @@ class NMF_SGD(nn.Module):
 def NMF_training(matrix,labels,method):
     num_document=matrix.shape[1]
     num_feature=matrix.shape[0]
-    num_cluster=20
 
-    matrix=100*torch.rand(num_feature,num_document)
+    # matrix=100*torch.rand(num_feature,num_document)
 
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
@@ -79,27 +100,42 @@ def NMF_training(matrix,labels,method):
 
         if epoch<5 or epoch%5==0:
             print("Epoch: %d, train loss is: %f. Time elapsed %f" %(epoch,float(loss_train),time.time()-startTime))
-            # print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
+            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
+
+def NMF_sklearn(matrix,labels):
+    matrix=matrix.to_dense().numpy()
+    model=decomposition.NMF(solver='cd',n_components=num_cluster,init='random',random_state=0)
+    U=model.fit_transform(matrix)
+    V_T=model.components_
+    print(V_T.shape)
+    acc=Predict_and_Eval(V_T,labels)
+    print("evaluation accuracy is: %f" %float(acc))
+
+
 
 def NMF(matrix,labels,method):
     
     #Perform NMF with different methods
     if method=='SGD':
         MSE=NMF_training(matrix,labels,'SGD')
+    elif method=='sklearn':
+        NMF_sklearn(matrix,labels)
+        
     
     # print("MSE of "+method+" on validation set is: %f" %MSE)
 
-
-
 if __name__ == "__main__":
-
-
     #Read dataset
     # matrix shape: num_document * num_feature, labels: num_document * 1 
-    matrix=torch.load('./data/x_test.pt')
-    labels=torch.load('./data/y_test.pt')
+    matrix=torch.load('./data/x_train.pt')
+    labels=torch.load('./data/y_train.pt')
+    labels=labels.numpy()
+
+    from collections import Counter
+    num_cluster_gt=len(Counter(labels))
+    num_cluster=num_cluster_gt
     print('Read dataset complete')
-    print('Matrix size: '+str(matrix.shape))
+    print('Matrix size: '+str(matrix.shape)+', category number: '+str(num_cluster_gt))
 
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
@@ -107,3 +143,5 @@ if __name__ == "__main__":
 #-------------------------NMF SGD-----------------------------
     NMF(matrix,labels,'SGD')
 
+# #-------------------------NMF Sklearn-----------------------------
+#     NMF(matrix,labels,'sklearn')
