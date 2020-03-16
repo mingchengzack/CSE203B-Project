@@ -15,6 +15,7 @@ from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
+from surprise import NMF
 
 num_cluster=20
 
@@ -66,8 +67,9 @@ def NMF_training(matrix,labels,method):
 
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
-    learning_rate=1
-    optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=5e-4)
+    # learning_rate=3
+    # optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
+    optimizer=optim.Adam(model.parameters())
     
     #Define loss function
     loss_func=MSE_loss
@@ -82,17 +84,19 @@ def NMF_training(matrix,labels,method):
         loss_train.backward() #Back propagation
         optimizer.step() #Update parameters
 
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                param.clamp_(min=0)
+
         # Get V_T and convert to numpy array
+        V_T=np.ones([1])
         for name, param in model.named_parameters():
             if name=='V_T':
                 V_T=param.data.detach().numpy()
         
-        # model.U=nn.Parameter(model.U.clamp(min=0))
-        # model.V_T=nn.Parameter(model.V_T.clamp(min=0))
-        
         # for i in range(V_T.shape[0]):
         #     for j in range(V_T.shape[1]):
-        #         if(V_T[i,j]>0):
+        #         if(V_T[i,j]<0):
         #             print('here')
 
         #Predict label and compute accuracy
@@ -107,10 +111,38 @@ def NMF_sklearn(matrix,labels):
     model=decomposition.NMF(solver='cd',n_components=num_cluster,init='random',random_state=0)
     U=model.fit_transform(matrix)
     V_T=model.components_
-    print(V_T.shape)
     acc=Predict_and_Eval(V_T,labels)
-    print("evaluation accuracy is: %f" %float(acc))
+    U=torch.FloatTensor(U)
+    V_T=torch.FloatTensor(V_T.copy())
+    pred=torch.mm(U,V_T)
+    loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
+    print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
 
+def NMF_surprise(matrix,labels):
+    matrix=matrix.to_dense().numpy()
+    # U=model.W
+    # V_T=model.H
+    # acc=Predict_and_Eval(V_T,labels)
+    # U=torch.FloatTensor(U)
+    # V_T=torch.FloatTensor(V_T.copy())
+    # pred=torch.mm(U,V_T)
+    # loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
+    # print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
+
+def SVD_sklearn(matrix,labels):
+    matrix=matrix.to_dense().numpy()
+    model=decomposition.TruncatedSVD(n_components=num_cluster,algorithm='arpack')
+    U=model.fit_transform(matrix)
+    V_T=model.components_
+    acc=Predict_and_Eval(V_T,labels)
+    U=torch.FloatTensor(U)
+    V_T=torch.FloatTensor(V_T.copy())
+    pred=torch.mm(U,V_T)
+    loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
+    print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
+
+def CNMF_Pymf(matrix,labels):
+    pass
 
 
 def NMF(matrix,labels,method):
@@ -118,8 +150,12 @@ def NMF(matrix,labels,method):
     #Perform NMF with different methods
     if method=='SGD':
         MSE=NMF_training(matrix,labels,'SGD')
-    elif method=='sklearn':
+    elif method=='NMF_sklearn':
         NMF_sklearn(matrix,labels)
+    elif method=='SVD_sklearn':
+        SVD_sklearn(matrix,labels)
+    elif method=='CNMF_Pymf':
+        CNMF_Pymf(matrix,labels)
         
     
     # print("MSE of "+method+" on validation set is: %f" %MSE)
@@ -140,8 +176,14 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-#-------------------------NMF SGD-----------------------------
-    NMF(matrix,labels,'SGD')
+# #-------------------------NMF SGD-----------------------------
+#     NMF(matrix,labels,'SGD')
 
 # #-------------------------NMF Sklearn-----------------------------
-#     NMF(matrix,labels,'sklearn')
+#     NMF(matrix,labels,'NMF_sklearn')
+
+# #-------------------------SVD Sklearn-----------------------------
+#     NMF(matrix,labels,'SVD_sklearn')
+
+#-------------------------CNMF Pymf-----------------------------
+    NMF(matrix,labels,'CNMF_Pymf')
