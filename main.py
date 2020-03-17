@@ -15,11 +15,8 @@ from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
-import surprise
-from surprise import NMF
-# from cnmf import CNMF
-# from chnmf import CHNMF
-from munkres import Munkres, print_matrix
+
+cuda=torch.device('cuda')
 
 num_cluster=20
 
@@ -60,87 +57,9 @@ def Map_Labels(V_T, clusters,labels, method):
 def Predict_and_Eval(V_T,labels):
     # V_T shape: num_cluster * num_document, labels shape: 1* num_document
     clusters = np.argmax(V_T, axis=0)
-    pred = Map_Labels(V_T, clusters, labels, 'KM')
+    pred = Map_Labels(V_T, clusters, labels, 'Mode')
     acc = sum(pred == labels) / len(labels)
     return acc
-
-#Define latent facor model in PyTorch style
-class NMF_SGD(nn.Module):
-    def __init__(self,num_document,num_feature,num_cluster):
-        super(NMF_SGD,self).__init__()
-        self.U=nn.Parameter(0.001*torch.rand(num_feature,num_cluster))
-        self.V_T=nn.Parameter(0.001*torch.rand(num_cluster,num_document))
-    
-    def forward(self):
-        # self.U=nn.Parameter(self.U.clamp(min=0))
-        # self.V_T=nn.Parameter(self.V_T.clamp(min=0))
-        return torch.mm(self.U,self.V_T)
-
-class CNMF_SGD(nn.Module):
-    def __init__(self,num_document,num_feature,num_cluster,matrix):
-        super(CNMF_SGD,self).__init__()
-        self.X=matrix
-        self.U=nn.Parameter(0.01*torch.rand(num_document,num_cluster))
-        self.V_T=nn.Parameter(0.01*torch.rand(num_cluster,num_document))
-    
-    def forward(self):
-        # self.U=nn.Parameter(self.U.clamp(min=0))
-        # self.V_T=nn.Parameter(self.V_T.clamp(min=0))
-        return torch.mm(self.X,torch.mm(self.U,self.V_T))
-
-#Training functions to conduct gradient descent in Latent Factor Model and DenseNET
-def NMF_training(matrix,labels,method):
-    num_document=matrix.shape[1]
-    num_feature=matrix.shape[0]
-
-    #Specify the model, learning rate and optimizer
-    if method=='NMF_SGD':
-        model=NMF_SGD(num_document,num_feature,num_cluster)
-    elif method=='CNMF_SGD':
-        model=CNMF_SGD(num_document,num_feature,num_cluster,matrix)
-    
-    learning_rate=5e-3
-    # optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
-    optimizer=optim.Adam(model.parameters(),lr=learning_rate)
-    
-    #Define loss function
-    loss_func=MSE_loss
-
-    train_epochs=300
-    for epoch in range(train_epochs):
-        startTime=time.time()
-
-        optimizer.zero_grad() #Zero gradient to avoid accumulating
-        preds=model() #Forward
-        loss_train=loss_func(preds,matrix) #Compute loss on training set
-        loss_train.backward() #Back propagation
-        optimizer.step() #Update parameters
-
-        with torch.no_grad():
-            for name, param in model.named_parameters():
-                param.clamp_(min=0)
-
-        # Get V_T and convert to numpy array
-        for name, param in model.named_parameters():
-            if name=='V_T':
-                V_T=param.data.detach().numpy()
-        
-        for i in range(V_T.shape[0]):
-            for j in range(V_T.shape[1]):
-                if(V_T[i,j]<0):
-                    print('here')
-
-        #Predict label and compute accuracy
-        acc=Predict_and_Eval(V_T,labels)
-
-        if epoch<5 or epoch%5==0:
-            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),time.time()-startTime))
-    
-    for name, param in model.named_parameters():
-        if name=='V_T':
-            torch.save(param.data,'V_T.pt')
-        if name=='U':
-            torch.save(param.data,'U.pt')
 
 def NMF_sklearn(matrix,labels):
     matrix=matrix.to_dense().numpy()
@@ -201,6 +120,86 @@ def CHNMF_Pymf(matrix,labels):
     loss_train = MSE_loss(pred, torch.FloatTensor(matrix))
     print("train loss is: %f, evaluation accuracy is: %f" % (float(loss_train), float(acc)))
 
+#Define latent facor model in PyTorch style
+class NMF_SGD(nn.Module):
+    def __init__(self,num_document,num_feature,num_cluster):
+        super(NMF_SGD,self).__init__()
+        self.U=nn.Parameter(0.001*torch.rand(num_feature,num_cluster))
+        self.V_T=nn.Parameter(0.001*torch.rand(num_cluster,num_document))
+    
+    def forward(self):
+        # self.U=nn.Parameter(self.U.clamp(min=0))
+        # self.V_T=nn.Parameter(self.V_T.clamp(min=0))
+        return torch.mm(self.U,self.V_T)
+
+class CNMF_SGD(nn.Module):
+    def __init__(self,num_document,num_feature,num_cluster,matrix):
+        super(CNMF_SGD,self).__init__()
+        self.X=matrix
+        self.U=nn.Parameter(0.01*torch.rand(num_document,num_cluster))
+        self.V_T=nn.Parameter(0.01*torch.rand(num_cluster,num_document))
+    
+    def forward(self):
+        # self.U=nn.Parameter(self.U.clamp(min=0))
+        # self.V_T=nn.Parameter(self.V_T.clamp(min=0))
+        return torch.mm(self.X,torch.mm(self.U,self.V_T))
+
+#Training functions to conduct gradient descent in Latent Factor Model and DenseNET
+def NMF_training(matrix,labels,method):
+    num_document=matrix.shape[1]
+    num_feature=matrix.shape[0]
+
+    #Specify the model, learning rate and optimizer
+    if method=='NMF_SGD':
+        model=NMF_SGD(num_document,num_feature,num_cluster).to(cuda)
+        learning_rate=5e-4
+        # optimizer=optim.SGD(model.parameters(),lr=learning_rate)
+        optimizer=optim.Adam(model.parameters(),lr=learning_rate)
+    elif method=='CNMF_SGD':
+        model=CNMF_SGD(num_document,num_feature,num_cluster,matrix).to(cuda)
+        learning_rate=1e-3
+        # optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
+        optimizer=optim.Adam(model.parameters(),lr=learning_rate)
+    
+    #Define loss function
+    loss_func=MSE_loss
+
+    train_epochs=2000
+    for epoch in range(train_epochs):
+        startTime=time.time()
+
+        optimizer.zero_grad() #Zero gradient to avoid accumulating
+        preds=model() #Forward
+        loss_train=loss_func(preds,matrix) #Compute loss on training set
+        loss_train.backward() #Back propagation
+        optimizer.step() #Update parameters
+
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                param.clamp_(min=0)
+
+        # Get V_T and convert to numpy array
+        for name, param in model.named_parameters():
+            if name=='V_T':
+                V_T=param.data.cpu().detach().numpy()
+        
+        for i in range(V_T.shape[0]):
+            for j in range(V_T.shape[1]):
+                if(V_T[i,j]<0):
+                    print('here')
+
+        #Predict label and compute accuracy
+        acc=Predict_and_Eval(V_T,labels)
+
+        if epoch<5 or epoch%5==0:
+            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),time.time()-startTime))
+    
+    for name, param in model.named_parameters():
+        if name=='V_T':
+            torch.save(param.data,'V_T.pt')
+        if name=='U':
+            torch.save(param.data,'U.pt')
+
 def NMF(matrix,labels,method):
     
     #Perform NMF with different methods
@@ -228,7 +227,7 @@ if __name__ == "__main__":
     labels=torch.load('./data/y_train.pt')
     labels=labels.numpy()
 
-    matrix=matrix
+    matrix=matrix.to(cuda)
 
     from collections import Counter
     num_cluster_gt=len(Counter(labels))
@@ -239,11 +238,11 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-#-------------------------NMF SGD-----------------------------
-    NMF(matrix,labels,'NMF_SGD')
+# #-------------------------NMF SGD-----------------------------
+#     NMF(matrix,labels,'NMF_SGD')
 
-# #-------------------------CNMF SGD-----------------------------
-#     NMF(matrix,labels,'CNMF_SGD')
+#-------------------------CNMF SGD-----------------------------
+    NMF(matrix,labels,'CNMF_SGD')
 
 # #-------------------------NMF Sklearn-----------------------------
 #     NMF(matrix,labels,'NMF_sklearn')
