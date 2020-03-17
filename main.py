@@ -18,6 +18,7 @@ import torch.optim as optim
 from surprise import NMF
 from cnmf import CNMF
 from chnmf import CHNMF
+from munkres import Munkres, print_matrix
 
 def MSE_loss(preds,labels):
     return ((preds-labels)**2).mean()
@@ -27,20 +28,36 @@ def Map_Labels(V_T, clusters,labels, method):
     map_label = dict()
 
     # Find the mode true label in each cluster and make it the prediction
-    if method == 'mode':
+    if method == 'Mode':
         for c in range(len(V_T)):
             count = np.array([labels[i] for i in np.nditer(np.where(clusters == c))])
             mode = stats.mode(count)
             map_label[c] = mode[0][0]
-        for i in range(len(labels)):
-            pred[i] = map_label[clusters[i]]
+    # Use Kuhn-Munkres algorithm to assign (cost = true label that are not equal to assigned label)
+    elif method == 'KM':
+        cost = [[] for i in range(num_cluster)]
+        m = Munkres()
+        for i in range(num_cluster):
+            for j in range(num_cluster):
+                c = 0
+                for k in range(len(labels)):
+                    if clusters[k] == i and labels[k] != j:
+                        c += 1
+                cost[i].append(c)
 
+        assign = m.compute(cost)
+        for cluster, label in assign:
+            map_label[cluster] = label
+
+    # assign mapping
+    for i in range(len(labels)):
+        pred[i] = map_label[clusters[i]]
     return pred
 
 def Predict_and_Eval(V_T,labels):
     # V_T shape: num_cluster * num_document, labels shape: 1* num_document
     clusters = np.argmax(V_T, axis=0)
-    pred = Map_Labels(V_T, clusters, labels, 'mode')
+    pred = Map_Labels(V_T, clusters, labels, 'KM')
     acc = sum(pred == labels) / len(labels)
     return acc
 
@@ -108,6 +125,7 @@ def NMF_training(matrix,labels,method):
 
 def NMF_sklearn(matrix,labels):
     matrix=matrix.to_dense().numpy()
+    startTime = time.time()
     model=decomposition.NMF(solver='cd',n_components=num_cluster,init='random',random_state=0)
     U=model.fit_transform(matrix)
     V_T=model.components_
@@ -116,6 +134,7 @@ def NMF_sklearn(matrix,labels):
     V_T=torch.FloatTensor(V_T.copy())
     pred=torch.mm(U,V_T)
     loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
+    print("Time elapsed %f" % (time.time() - startTime))
     print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
 
 def NMF_surprise(matrix,labels):
@@ -144,7 +163,11 @@ def SVD_sklearn(matrix,labels):
 def CNMF_Pymf(matrix,labels):
     matrix=matrix.to_dense().numpy()
     model = CNMF(matrix, num_bases=num_cluster)
-    model.factorize(niter=200)
+    startTime = time.time()
+    model.H = np.random.rand(num_cluster, len(labels))
+    model.G = np.random.rand(len(labels), num_cluster)
+    # model.W = np.dot(matrix[:, :], model.G)
+    model.factorize(niter=5,compute_err=False)
     U=model.W
     V_T=model.H
     acc = Predict_and_Eval(V_T, labels)
@@ -152,12 +175,13 @@ def CNMF_Pymf(matrix,labels):
     V_T = torch.FloatTensor(V_T.copy())
     pred = torch.mm(U, V_T)
     loss_train = MSE_loss(pred, torch.FloatTensor(matrix))
+    print("Time elapsed %f" % (time.time() - startTime))
     print("train loss is: %f, evaluation accuracy is: %f" % (float(loss_train), float(acc)))
 
 def CHNMF_Pymf(matrix,labels):
     matrix=matrix.to_dense().numpy()
     model = CHNMF(matrix, num_bases=num_cluster)
-    model.factorize(niter=200)
+    model.factorize(niter=10)
     U=model.W
     V_T=model.H
     acc = Predict_and_Eval(V_T, labels)
@@ -199,8 +223,8 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-# #-------------------------NMF SGD-----------------------------
-#     NMF(matrix,labels,'SGD')
+#-------------------------NMF SGD-----------------------------
+    # NMF(matrix,labels,'SGD')
 
 # #-------------------------NMF Sklearn-----------------------------
 #     NMF(matrix,labels,'NMF_sklearn')
@@ -210,3 +234,4 @@ if __name__ == "__main__":
 
 #-------------------------CNMF Pymf-----------------------------
     NMF(matrix,labels,'CNMF_Pymf')
+    NMF(matrix,labels,'NMF_sklearn')
