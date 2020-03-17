@@ -62,7 +62,7 @@ def Predict_and_Eval(V_T,labels):
     return acc
 
 def NMF_sklearn(matrix,labels):
-    matrix=matrix.to_dense().numpy()
+    matrix=matrix.cpu().to_dense().numpy()
     startTime = time.time()
     model=decomposition.NMF(solver='mu',n_components=num_cluster,init='random',verbose=True)
     U=model.fit_transform(matrix)
@@ -78,7 +78,7 @@ def NMF_sklearn(matrix,labels):
     torch.save(torch.FloatTensor(V_T),'V_T_gt.pt')
 
 def SVD_sklearn(matrix,labels):
-    matrix=matrix.to_dense().numpy()
+    matrix=matrix.cpu().to_dense().numpy()
     model=decomposition.TruncatedSVD(n_components=num_cluster,algorithm='arpack')
     U=model.fit_transform(matrix)
     V_T=model.components_
@@ -90,7 +90,7 @@ def SVD_sklearn(matrix,labels):
     print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
 
 def CNMF_Pymf(matrix,labels):
-    matrix=matrix.to_dense().numpy()
+    matrix=matrix.cpu().to_dense().numpy()
     model = CNMF(matrix, num_bases=num_cluster)
     startTime = time.time()
     model.H = np.random.rand(num_cluster, len(labels))
@@ -108,7 +108,7 @@ def CNMF_Pymf(matrix,labels):
     print("train loss is: %f, evaluation accuracy is: %f" % (float(loss_train), float(acc)))
 
 def CHNMF_Pymf(matrix,labels):
-    matrix=matrix.to_dense().numpy()
+    matrix=matrix.cpu().to_dense().numpy()
     model = CHNMF(matrix, num_bases=num_cluster)
     model.factorize(niter=10)
     U=model.W
@@ -188,10 +188,9 @@ def NMF_training(matrix,labels,method):
                 if(V_T[i,j]<0):
                     print('here')
 
-        #Predict label and compute accuracy
-        acc=Predict_and_Eval(V_T,labels)
-
-        if epoch<5 or epoch%5==0:
+        if epoch<5 or epoch%10==0:
+            #Predict label and compute accuracy
+            acc=Predict_and_Eval(V_T,labels)
             print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),time.time()-startTime))
     
     for name, param in model.named_parameters():
