@@ -15,7 +15,7 @@ from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
-from surprise import NMF
+import surprise
 
 num_cluster=20
 
@@ -46,10 +46,8 @@ def Predict_and_Eval(V_T,labels):
 
 #Define latent facor model in PyTorch style
 class NMF_SGD(nn.Module):
-    def __init__(self,num_document,num_feature,num_cluster): #K is the latent vector dimension, alpha_init is used to initialize alpha
+    def __init__(self,num_document,num_feature,num_cluster):
         super(NMF_SGD,self).__init__()
-        # self.U=nn.Embedding(num_feature,num_cluster,sparse=True)
-        # self.V_T=nn.Embedding(num_cluster,num_document,sparse=True)
         self.U=nn.Parameter(torch.rand(num_feature,num_cluster))
         self.V_T=nn.Parameter(torch.rand(num_cluster,num_document))
     
@@ -67,14 +65,14 @@ def NMF_training(matrix,labels,method):
 
     #Specify the model, learning rate and optimizer
     model=NMF_SGD(num_document,num_feature,num_cluster)
-    # learning_rate=3
-    # optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
-    optimizer=optim.Adam(model.parameters())
+    learning_rate=1
+    optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
+    # optimizer=optim.Adam(model.parameters(),lr=learning_rate)
     
     #Define loss function
     loss_func=MSE_loss
 
-    train_epochs=2000
+    train_epochs=300
     for epoch in range(train_epochs):
         startTime=time.time()
 
@@ -89,26 +87,30 @@ def NMF_training(matrix,labels,method):
                 param.clamp_(min=0)
 
         # Get V_T and convert to numpy array
-        V_T=np.ones([1])
         for name, param in model.named_parameters():
             if name=='V_T':
                 V_T=param.data.detach().numpy()
         
-        # for i in range(V_T.shape[0]):
-        #     for j in range(V_T.shape[1]):
-        #         if(V_T[i,j]<0):
-        #             print('here')
+        for i in range(V_T.shape[0]):
+            for j in range(V_T.shape[1]):
+                if(V_T[i,j]<0):
+                    print('here')
 
         #Predict label and compute accuracy
         acc=Predict_and_Eval(V_T,labels)
 
         if epoch<5 or epoch%5==0:
-            print("Epoch: %d, train loss is: %f. Time elapsed %f" %(epoch,float(loss_train),time.time()-startTime))
-            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f" %(epoch,float(loss_train),float(acc)))
+            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),time.time()-startTime))
+    
+    for name, param in model.named_parameters():
+        if name=='V_T':
+            torch.save(param.data,'V_T.pt')
+        if name=='U':
+            torch.save(param.data,'U.pt')
 
 def NMF_sklearn(matrix,labels):
     matrix=matrix.to_dense().numpy()
-    model=decomposition.NMF(solver='cd',n_components=num_cluster,init='random',random_state=0)
+    model=decomposition.NMF(solver='cd',n_components=num_cluster,init='random')
     U=model.fit_transform(matrix)
     V_T=model.components_
     acc=Predict_and_Eval(V_T,labels)
@@ -117,17 +119,8 @@ def NMF_sklearn(matrix,labels):
     pred=torch.mm(U,V_T)
     loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
     print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
-
-def NMF_surprise(matrix,labels):
-    matrix=matrix.to_dense().numpy()
-    # U=model.W
-    # V_T=model.H
-    # acc=Predict_and_Eval(V_T,labels)
-    # U=torch.FloatTensor(U)
-    # V_T=torch.FloatTensor(V_T.copy())
-    # pred=torch.mm(U,V_T)
-    # loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
-    # print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
+    torch.save(torch.FloatTensor(U),'U_gt.pt')
+    torch.save(torch.FloatTensor(V_T),'V_T_gt.pt')
 
 def SVD_sklearn(matrix,labels):
     matrix=matrix.to_dense().numpy()
@@ -152,6 +145,8 @@ def NMF(matrix,labels,method):
         MSE=NMF_training(matrix,labels,'SGD')
     elif method=='NMF_sklearn':
         NMF_sklearn(matrix,labels)
+    elif method=='NMF_surprise':
+        NMF_surprise(matrix,labels)
     elif method=='SVD_sklearn':
         SVD_sklearn(matrix,labels)
     elif method=='CNMF_Pymf':
@@ -167,6 +162,8 @@ if __name__ == "__main__":
     labels=torch.load('./data/y_train.pt')
     labels=labels.numpy()
 
+    matrix=matrix
+
     from collections import Counter
     num_cluster_gt=len(Counter(labels))
     num_cluster=num_cluster_gt
@@ -176,8 +173,8 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-# #-------------------------NMF SGD-----------------------------
-#     NMF(matrix,labels,'SGD')
+#-------------------------NMF SGD-----------------------------
+    NMF(matrix,labels,'SGD')
 
 # #-------------------------NMF Sklearn-----------------------------
 #     NMF(matrix,labels,'NMF_sklearn')
@@ -185,5 +182,5 @@ if __name__ == "__main__":
 # #-------------------------SVD Sklearn-----------------------------
 #     NMF(matrix,labels,'SVD_sklearn')
 
-#-------------------------CNMF Pymf-----------------------------
-    NMF(matrix,labels,'CNMF_Pymf')
+# #-------------------------CNMF Pymf-----------------------------
+#     NMF(matrix,labels,'CNMF_Pymf')

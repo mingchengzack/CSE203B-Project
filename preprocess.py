@@ -4,6 +4,7 @@ from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 def main():
+    # cats=['sci.space']
     cats=['talk.politics.misc','sci.electronics','sci.space','rec.sport.baseball','comp.graphics']
     # cats=['talk.politics.misc','sci.electronics','sci.space','rec.sport.baseball','comp.graphics','comp.sys.mac.hardware','soc.religion.christian','talk.religion.misc','rec.motorcycles','alt.atheism']
     newsgroups_train = fetch_20newsgroups(data_home="./data/", subset='all', remove=('headers', 'footers', 'quotes'),categories=cats)
