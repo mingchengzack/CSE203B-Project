@@ -11,10 +11,15 @@ from sklearn.decomposition import PCA
 from sklearn import metrics
 from sklearn import linear_model
 from sklearn import decomposition
+from sklearn.metrics import precision_recall_fscore_support
 from scipy import stats
 import torch
 from torch import nn
 import torch.optim as optim
+# from cnmf import CNMF
+# from chnmf import CHNMF
+# from munkres import Munkres
+
 
 cuda=torch.device('cuda')
 
@@ -59,7 +64,8 @@ def Predict_and_Eval(V_T,labels):
     clusters = np.argmax(V_T, axis=0)
     pred = Map_Labels(V_T, clusters, labels, 'Mode')
     acc = sum(pred == labels) / len(labels)
-    return acc
+    precision,recall,fscore,_ = precision_recall_fscore_support(labels,pred,average='weighted',zero_division=0)
+    return acc,precision,recall,fscore
 
 def NMF_sklearn(matrix,labels):
     matrix=matrix.cpu().to_dense().numpy()
@@ -67,58 +73,57 @@ def NMF_sklearn(matrix,labels):
     model=decomposition.NMF(solver='mu',n_components=num_cluster,init='random',verbose=True)
     U=model.fit_transform(matrix)
     V_T=model.components_
-    acc=Predict_and_Eval(V_T,labels)
+    acc,precision,recall,fscore=Predict_and_Eval(V_T,labels)
     U=torch.FloatTensor(U)
     V_T=torch.FloatTensor(V_T.copy())
     pred=torch.mm(U,V_T)
     loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
     print("Time elapsed %f" % (time.time() - startTime))
-    print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
-    torch.save(torch.FloatTensor(U),'U_gt.pt')
-    torch.save(torch.FloatTensor(V_T),'V_T_gt.pt')
+    print("train loss is: %f, evaluation accuracy is: %f, Precision is: %f, Recall is: %f, Fscore is: %f." % (float(loss_train), float(acc), precision, recall, fscore))
 
 def SVD_sklearn(matrix,labels):
     matrix=matrix.cpu().to_dense().numpy()
     model=decomposition.TruncatedSVD(n_components=num_cluster,algorithm='arpack')
     U=model.fit_transform(matrix)
     V_T=model.components_
-    acc=Predict_and_Eval(V_T,labels)
+    acc,precision,recall,fscore=Predict_and_Eval(V_T,labels)
     U=torch.FloatTensor(U)
     V_T=torch.FloatTensor(V_T.copy())
     pred=torch.mm(U,V_T)
     loss_train=MSE_loss(pred,torch.FloatTensor(matrix))
-    print("train loss is: %f, evaluation accuracy is: %f" %(float(loss_train),float(acc)))
+    print("train loss is: %f, evaluation accuracy is: %f, Precision is: %f, Recall is: %f, Fscore is: %f." % (float(loss_train), float(acc), precision, recall, fscore))
 
 def CNMF_Pymf(matrix,labels):
     matrix=matrix.cpu().to_dense().numpy()
     model = CNMF(matrix, num_bases=num_cluster)
     startTime = time.time()
-    model.H = np.random.rand(num_cluster, len(labels))
-    model.G = np.random.rand(len(labels), num_cluster)
-    # model.W = np.dot(matrix[:, :], model.G)
-    model.factorize(niter=5,compute_err=False)
+    model.H = 0.001*np.random.rand(num_cluster, len(labels))
+    model.G = 0.001*np.random.rand(len(labels), num_cluster)
+    model.factorize(niter=100,compute_err=False)
     U=model.W
     V_T=model.H
-    acc = Predict_and_Eval(V_T, labels)
+    acc,precision,recall,fscore = Predict_and_Eval(V_T, labels)
     U = torch.FloatTensor(U)
     V_T = torch.FloatTensor(V_T.copy())
     pred = torch.mm(U, V_T)
     loss_train = MSE_loss(pred, torch.FloatTensor(matrix))
     print("Time elapsed %f" % (time.time() - startTime))
-    print("train loss is: %f, evaluation accuracy is: %f" % (float(loss_train), float(acc)))
+    print("train loss is: %f, evaluation accuracy is: %f, Precision is: %f, Recall is: %f, Fscore is: %f." % (float(loss_train), float(acc), precision, recall, fscore))
 
 def CHNMF_Pymf(matrix,labels):
     matrix=matrix.cpu().to_dense().numpy()
     model = CHNMF(matrix, num_bases=num_cluster)
-    model.factorize(niter=10)
+    startTime = time.time()
+    model.factorize(niter=10,compute_err=False)
     U=model.W
     V_T=model.H
-    acc = Predict_and_Eval(V_T, labels)
+    acc,precision,recall,fscore = Predict_and_Eval(V_T, labels)
     U = torch.FloatTensor(U)
     V_T = torch.FloatTensor(V_T.copy())
     pred = torch.mm(U, V_T)
     loss_train = MSE_loss(pred, torch.FloatTensor(matrix))
-    print("train loss is: %f, evaluation accuracy is: %f" % (float(loss_train), float(acc)))
+    print("Time elapsed %f" % (time.time() - startTime))
+    print("train loss is: %f, evaluation accuracy is: %f, Precision is: %f, Recall is: %f, Fscore is: %f." % (float(loss_train), float(acc), precision, recall, fscore))
 
 #Define latent facor model in PyTorch style
 class NMF_SGD(nn.Module):
@@ -164,7 +169,7 @@ def NMF_training(matrix,labels,method):
     #Define loss function
     loss_func=MSE_loss
 
-    train_epochs=2000
+    train_epochs=21
     for epoch in range(train_epochs):
         startTime=time.time()
 
@@ -190,8 +195,8 @@ def NMF_training(matrix,labels,method):
 
         if epoch<5 or epoch%10==0:
             #Predict label and compute accuracy
-            acc=Predict_and_Eval(V_T,labels)
-            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),time.time()-startTime))
+            acc,precision,recall,fscore=Predict_and_Eval(V_T,labels)
+            print("Epoch: %d, train loss is: %f, evaluation accuracy is: %f, Precision is: %f, Recall is: %f, Fscore is: %f. Time elapsed %f" %(epoch,float(loss_train),float(acc),precision,recall,fscore,time.time()-startTime))
     
     for name, param in model.named_parameters():
         if name=='V_T':
@@ -208,8 +213,8 @@ def NMF(matrix,labels,method):
         MSE=NMF_training(matrix,labels,'CNMF_SGD')
     elif method=='NMF_sklearn':
         NMF_sklearn(matrix,labels)
-    elif method=='NMF_surprise':
-        NMF_surprise(matrix,labels)
+    # elif method=='NMF_surprise':
+    #     NMF_surprise(matrix,labels)
     elif method=='SVD_sklearn':
         SVD_sklearn(matrix,labels)
     elif method=='CNMF_Pymf':
@@ -222,8 +227,8 @@ def NMF(matrix,labels,method):
 if __name__ == "__main__":
     #Read dataset
     # matrix shape: num_document * num_feature, labels: num_document * 1 
-    matrix=torch.load('./data/x_train.pt')
-    labels=torch.load('./data/y_train.pt')
+    matrix=torch.load('./data/x_train_20.pt')
+    labels=torch.load('./data/y_train_20.pt')
     labels=labels.numpy()
 
     matrix=matrix.to(cuda)
@@ -237,8 +242,8 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-# #-------------------------NMF SGD-----------------------------
-#     NMF(matrix,labels,'NMF_SGD')
+#-------------------------NMF SGD-----------------------------
+    NMF(matrix,labels,'NMF_SGD')
 
 #-------------------------CNMF SGD-----------------------------
     NMF(matrix,labels,'CNMF_SGD')
@@ -251,3 +256,6 @@ if __name__ == "__main__":
 
 # #-------------------------CNMF Pymf-----------------------------
 #     NMF(matrix,labels,'CNMF_Pymf')
+
+# #-------------------------CHNMF Pymf-----------------------------
+#     NMF(matrix,labels,'CHNMF_Pymf')
