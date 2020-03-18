@@ -141,8 +141,8 @@ class CNMF_SGD(nn.Module):
     def __init__(self,num_document,num_feature,num_cluster,matrix):
         super(CNMF_SGD,self).__init__()
         self.X=matrix
-        self.U=nn.Parameter(0.01*torch.rand(num_document,num_cluster))
-        self.V_T=nn.Parameter(0.01*torch.rand(num_cluster,num_document))
+        self.U=nn.Parameter(0.001*torch.rand(num_document,num_cluster))
+        self.V_T=nn.Parameter(0.001*torch.rand(num_cluster,num_document))
     
     def forward(self):
         # self.U=nn.Parameter(self.U.clamp(min=0))
@@ -157,19 +157,19 @@ def NMF_training(matrix,labels,method):
     #Specify the model, learning rate and optimizer
     if method=='NMF_SGD':
         model=NMF_SGD(num_document,num_feature,num_cluster).to(cuda)
-        learning_rate=5e-4
+        learning_rate=2e-3
         # optimizer=optim.SGD(model.parameters(),lr=learning_rate)
         optimizer=optim.Adam(model.parameters(),lr=learning_rate)
     elif method=='CNMF_SGD':
         model=CNMF_SGD(num_document,num_feature,num_cluster,matrix).to(cuda)
-        learning_rate=1e-3
+        learning_rate=2e-3
         # optimizer=optim.SGD(model.parameters(),lr=learning_rate,momentum=0.8,weight_decay=1e-5)
         optimizer=optim.Adam(model.parameters(),lr=learning_rate)
     
     #Define loss function
     loss_func=MSE_loss
 
-    train_epochs=21
+    train_epochs=2000
     for epoch in range(train_epochs):
         startTime=time.time()
 
@@ -227,8 +227,8 @@ def NMF(matrix,labels,method):
 if __name__ == "__main__":
     #Read dataset
     # matrix shape: num_document * num_feature, labels: num_document * 1 
-    matrix=torch.load('./data/x_train_20.pt')
-    labels=torch.load('./data/y_train_20.pt')
+    matrix=torch.load('./data/x_train_5.pt')
+    labels=torch.load('./data/y_train_5.pt')
     labels=labels.numpy()
 
     matrix=matrix.to(cuda)
@@ -242,8 +242,8 @@ if __name__ == "__main__":
 # #-------------------------plot statistics of dataset-----------------------------
 #     plot_dataset_statistics(dataset)
 
-#-------------------------NMF SGD-----------------------------
-    NMF(matrix,labels,'NMF_SGD')
+# #-------------------------NMF SGD-----------------------------
+#     NMF(matrix,labels,'NMF_SGD')
 
 #-------------------------CNMF SGD-----------------------------
     NMF(matrix,labels,'CNMF_SGD')
